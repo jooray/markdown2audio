@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "markdown-to-speech"
+version = "0.1.0"
+description = "A script to convert markdown files into spoken audio."
+authors = ["Juraj Bednir <juraj@bednar.io>"]
+license = "GLWTS"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.11"
+markdown = "^3.4.3"
+beautifulsoup4 = "^4.12.2"
+numpy = "^1.23.5"
+soundfile = "^0.12.1"
+f5-tts-mlx = "^0.1.7"
+nltk = "^3.9.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
