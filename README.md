@@ -88,10 +88,3 @@ You can convert an audio file to the correct format with ffmpeg like this:
 ```bash
 ffmpeg -i /path/to/audio.wav -ac 1 -ar 24000 -sample_fmt s16 -t 10 /path/to/output_audio.wav
 ```
-
-### Notes
-
-- **Reference Audio:** Both `--ref-audio` and `--ref-text` must be provided together. If only one is supplied, the script will raise an error.
-- **Temporary Files:** The script generates a temporary audio file (`temp_output.wav`) for each text chunk. Ensure you have write permissions in the working directory.
-- **Cleanup:** The temporary files are not automatically deleted. You may want to remove them manually after execution.
-
