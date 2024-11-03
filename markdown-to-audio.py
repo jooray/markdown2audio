@@ -7,6 +7,10 @@ from bs4 import BeautifulSoup
 from f5_tts_mlx.generate import generate
 import nltk
 from nltk.tokenize import sent_tokenize, word_tokenize
+from pywhispercpp.model import Model  # Importing pywhispercpp
+from difflib import SequenceMatcher
+import os
+import tempfile
 
 # Ensure NLTK resources are downloaded
 nltk.download('punkt', quiet=True)
@@ -87,19 +91,44 @@ def split_long_sentences(sentences, max_length):
             result.extend(final_chunks)
     return result
 
-# Function to generate audio from text
-def text_to_audio(texts, args):
-    audio_segments = []
-    for text in texts:
-        print("Generating: " + text)
-        if not text.endswith('.'):
-            text += '.'
+# Function to calculate similarity ratio
+def similarity_ratio(a, b):
+    matcher = SequenceMatcher(None, a, b)
+    return matcher.ratio()
+
+# Function to generate audio and find the best match
+def generate_best_audio(text, args, stt_model):
+    print("Generating: " + text)
+    if not text.endswith('.'):
+        text += '.'
+
+    max_duration_seconds = 30.0  # Maximum allowed duration in seconds
+
+    best_similarity = 0.0
+    best_audio_path = None
+    duration_seconds = None  # Initialize to None
+    retries = 0
+    max_retries = 5  # To prevent infinite loops
+
+    temp_files = []  # Keep track of temporary files to delete later
+
+    while retries < max_retries:
+        # Create a unique temporary file for each attempt
+        temp_fd, temp_path = tempfile.mkstemp(suffix='.wav')
+        os.close(temp_fd)  # We will write to this file later
+        temp_files.append(temp_path)
+
         generate_args = {
             'generation_text': text,
             'model_name': 'lucasnewman/f5-tts-mlx',
-            'output_path': 'temp_output.wav',
-            'seed': args.seed
+            'output_path': temp_path,
+            'seed': args.seed,
+            # Do not set 'duration' on first attempt
         }
+        if duration_seconds is not None:
+            # For subsequent attempts, set duration
+            generate_args['duration'] = duration_seconds
+
         if args.ref_audio and args.ref_text:
             generate_args['ref_audio_path'] = args.ref_audio
             generate_args['ref_audio_text'] = args.ref_text
@@ -107,8 +136,84 @@ def text_to_audio(texts, args):
             raise ValueError("Both reference audio and reference text must be provided together.")
         # Else, do not pass ref_audio_path and ref_audio_text
 
+        # Generate audio
         generate(**generate_args)
-        audio, _ = sf.read("temp_output.wav")
+
+        # Read the generated audio to get its duration
+        audio_data, _ = sf.read(temp_path)
+        generated_duration_seconds = len(audio_data) / 24000  # SAMPLE_RATE is 24000 Hz
+
+        # Transcribe the audio
+        segments = stt_model.transcribe(temp_path)
+        transcribed_text = ''.join([segment.text for segment in segments]).strip()
+
+        # Output the transcription for debugging
+        print(f"Transcribed text: {transcribed_text}")
+
+        # Clean up transcribed text and original text for comparison
+        clean_transcribed_text = re.sub(r'\s+', ' ', transcribed_text.lower())
+        clean_original_text = re.sub(r'\s+', ' ', text.lower())
+
+        # Compare the ends of the texts
+        N = min(50, len(clean_original_text))  # Adjust N as needed
+        transcribed_end = clean_transcribed_text[-N:]
+        original_end = clean_original_text[-N:]
+
+        # Compute similarity
+        similarity = similarity_ratio(transcribed_end, original_end)
+
+        print(f"Attempt {retries + 1}: Similarity (last {N} chars): {similarity:.2f}")
+
+        # Check if similarity has improved
+        if similarity > best_similarity:
+            best_similarity = similarity
+            best_audio_path = temp_path
+
+            # If similarity is high enough, accept the audio
+            if similarity >= 0.9:
+                print("Audio accepted.")
+                break
+        else:
+            # If similarity hasn't improved, use previous best audio
+            print("No improvement in similarity.")
+            break
+
+        # For next attempt, increase duration by 20%, respecting max_duration_seconds
+        if duration_seconds is None:
+            duration_seconds = min(generated_duration_seconds * 1.2, max_duration_seconds)
+        else:
+            duration_seconds = min(duration_seconds * 1.2, max_duration_seconds)
+
+        if duration_seconds > max_duration_seconds:
+            print("Reached maximum duration limit.")
+            break
+
+        retries += 1
+        print(f"Increasing duration to {duration_seconds:.2f} seconds and retrying...")
+
+    if best_audio_path is not None:
+        audio, _ = sf.read(best_audio_path)
+    else:
+        # If no good audio was generated, use the last attempt
+        print(f"Warning: Could not generate complete audio for text: {text}")
+        # Use the last generated audio
+        audio, _ = sf.read(temp_path)
+
+    # Clean up temporary files except the best one
+    for file_path in temp_files:
+        if os.path.exists(file_path) and file_path != best_audio_path:
+            os.remove(file_path)
+
+    return audio
+
+# Function to generate audio from text with verification
+def text_to_audio(texts, args):
+    audio_segments = []
+    # Initialize the speech-to-text model
+    stt_model = Model('base.en', n_threads=4)  # Adjust n_threads as needed
+
+    for text in texts:
+        audio = generate_best_audio(text, args, stt_model)
         audio_segments.append(audio)
         # Add pause
         if args.pause > 0:

@@ -14,6 +14,7 @@ numpy = "^1.23.5"
 soundfile = "^0.12.1"
 f5-tts-mlx = "^0.1.7"
 nltk = "^3.9.1"
+pywhispercpp = "^1.2.0"
 
 [build-system]
 requires = ["poetry-core"]

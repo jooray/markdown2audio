@@ -11,6 +11,7 @@ This script converts markdown files into spoken audio by generating speech for h
 - Concatenates generated audio segments with optional pauses.
 - Supports optional reference audio for voice style matching.
 - Allows setting a seed for reproducibility.
+- Verifies the output audio with whisper speech to text, regenerates if the output has been cut off or is not good enough.
 
 ## Installation
 
