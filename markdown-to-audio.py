@@ -11,6 +11,8 @@ from pywhispercpp.model import Model  # Importing pywhispercpp
 from difflib import SequenceMatcher
 import os
 import tempfile
+import time
+from tqdm import tqdm  # Import tqdm for progress bar
 
 # Ensure NLTK resources are downloaded
 nltk.download('punkt', quiet=True)
@@ -98,7 +100,7 @@ def similarity_ratio(a, b):
 
 # Function to generate audio and find the best match
 def generate_best_audio(text, args, stt_model):
-    print("Generating: " + text)
+    print(f"Processing text: {text}")
     if not text.endswith('.'):
         text += '.'
 
@@ -212,13 +214,33 @@ def text_to_audio(texts, args):
     # Initialize the speech-to-text model
     stt_model = Model('base.en', n_threads=4)  # Adjust n_threads as needed
 
-    for text in texts:
-        audio = generate_best_audio(text, args, stt_model)
-        audio_segments.append(audio)
-        # Add pause
-        if args.pause > 0:
-            pause = np.zeros(int(args.pause * 24000))  # SAMPLE_RATE is 24000 Hz
-            audio_segments.append(pause)
+    total_chunks = len(texts)
+    start_time = time.time()
+
+    # Use tqdm for progress bar
+    with tqdm(total=total_chunks, desc='Generating audio', unit='chunk') as pbar:
+        for idx, text in enumerate(texts):
+            audio = generate_best_audio(text, args, stt_model)
+            audio_segments.append(audio)
+            # Add pause
+            if args.pause > 0:
+                pause = np.zeros(int(args.pause * 24000))  # SAMPLE_RATE is 24000 Hz
+                audio_segments.append(pause)
+
+            # Update progress bar
+            pbar.update(1)
+
+            # Calculate elapsed time and estimated remaining time
+            elapsed_time = time.time() - start_time
+            avg_time_per_chunk = elapsed_time / (idx + 1)
+            remaining_chunks = total_chunks - (idx + 1)
+            remaining_time = avg_time_per_chunk * remaining_chunks
+
+            # Update progress bar postfix with time estimations
+            pbar.set_postfix({
+                'Elapsed': f"{elapsed_time:.2f}s",
+                'Remaining': f"{remaining_time:.2f}s"
+            })
 
     return np.concatenate(audio_segments)
 
