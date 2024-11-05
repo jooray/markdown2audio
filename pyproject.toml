@@ -2,9 +2,9 @@
 name = "markdown-to-speech"
 version = "0.1.0"
 description = "A script to convert markdown files into spoken audio."
-authors = ["Juraj Bednir <juraj@bednar.io>"]
+authors = ["Juraj Bednar <juraj@bednar.io>"]
 license = "GLWTS"
-package-mode = false
+packages = [{include = "markdown_to_speech"}]
 
 [tool.poetry.dependencies]
 python = "^3.11"
