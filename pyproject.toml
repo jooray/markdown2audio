@@ -17,7 +17,6 @@ nltk = "^3.9.1"
 pywhispercpp = "^1.2.0"
 tqdm = "^4.64.1"
 colorama = "^0.4.6"
-deep-phonemizer = "^0.0.19"
 
 [build-system]
 requires = ["poetry-core"]
