@@ -12,11 +12,12 @@ markdown = "^3.4.3"
 beautifulsoup4 = "^4.12.2"
 numpy = "^1.23.5"
 soundfile = "^0.12.1"
-f5-tts-mlx = "^0.1.7"
+styletts2 = "^0.1.6"
 nltk = "^3.9.1"
 pywhispercpp = "^1.2.0"
 tqdm = "^4.64.1"
 colorama = "^0.4.6"
+deep-phonemizer = "^0.0.19"
 
 [build-system]
 requires = ["poetry-core"]

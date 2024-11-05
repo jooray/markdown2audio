@@ -6,18 +6,17 @@ def main():
     parser.add_argument("input", help="Input markdown file path.")
     parser.add_argument("output", help="Output audio file path.")
     parser.add_argument("--ref-audio", default="", help="Reference audio file path.")
-    parser.add_argument("--ref-text", default="", help="Text spoken in the reference audio.")
     parser.add_argument("--pause", type=float, default=0.5, help="Default pause duration in seconds between segments.")
-    parser.add_argument("--max-length", type=int, default=500, help="Maximum length of text chunk.")
-    parser.add_argument("--seed", type=int, default=None, help="Seed for noise generation.")
-    parser.add_argument("--model-name", type=str, default="lucasnewman/f5-tts-mlx", help="Name of the TTS model to use.")
 
-    # Speaking pace (words per second) control
-    parser.add_argument("--wps-threshold", type=float, default=0.1, help="Allowed WPS variation threshold (default: 0.1 for 10%).")
-    parser.add_argument("--target-wps", type=float, default=None, help="Target words per second. If not set, estimated from the first audio.")
+    # Add options for StyleTTS2 parameters
+    parser.add_argument("--alpha", type=float, default=0.3, help="Alpha parameter for StyleTTS2 (default: 0.3).")
+    parser.add_argument("--beta", type=float, default=0.7, help="Beta parameter for StyleTTS2 (default: 0.7).")
+    parser.add_argument("--diffusion-steps", type=int, default=5, help="Diffusion steps for StyleTTS2 (default: 5).")
+    parser.add_argument("--embedding-scale", type=float, default=1.0, help="Embedding scale for StyleTTS2 (default: 1.0).")
+
+    # Similarity threshold
     parser.add_argument("--min-similarity", type=float, default=0.9, help="Minimum acceptable similarity (default: 0.9).")
 
-    # Add command-line arguments for heading pauses (H1 to H3)
     parser.add_argument('--pause-h1-before', type=float, default=2.0,
                         help='Pause before H1 headings in seconds.')
     parser.add_argument('--pause-h1-after', type=float, default=0.7,
@@ -30,6 +29,9 @@ def main():
                         help='Pause before H3 headings in seconds.')
     parser.add_argument('--pause-h3-after', type=float, default=0.7,
                         help='Pause after H3 headings in seconds.')
+
+    parser.add_argument('--split-at-headings', action='store_true', default=False,
+                        help='Split text into segments at headings and paragraphs (default: False).')
 
     args = parser.parse_args()
 

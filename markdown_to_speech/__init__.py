@@ -1,8 +1,6 @@
 import re
 import numpy as np
 import soundfile as sf
-import nltk
-from nltk.tokenize import sent_tokenize, word_tokenize
 from pywhispercpp.model import Model
 from difflib import SequenceMatcher
 import os
@@ -10,14 +8,10 @@ import tempfile
 import time
 from tqdm import tqdm
 from colorama import init, Fore, Style
-from f5_tts_mlx.generate import generate
-
-# Ensure NLTK resources are downloaded
-nltk.download('punkt', quiet=True)
+from styletts2 import tts  # Import the StyleTTS2 model
 
 # Initialize colorama
 init(autoreset=True)
-
 
 def remove_links(markdown_text):
     # Replace [text](link) with text
@@ -31,210 +25,139 @@ def ensure_ending_dot(text):
         return text.strip()
 
 
-def parse_markdown_with_pauses(markdown_text, heading_pauses, max_length):
+def remove_markdown_formatting(text):
+    # Remove markdown formatting
+    text = re.sub(r'#{1,6}\s*', '', text)  # Remove heading markers
+    text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)  # Bold
+    text = re.sub(r'\*([^*]+)\*', r'\1', text)      # Italics
+    text = re.sub(r'!\[.*?\]\(.*?\)', '', text)     # Images
+    text = re.sub(r'`([^`]+)`', r'\1', text)        # Inline code
+    text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)  # Code blocks
+    text = re.sub(r'>\s*(.*)', r'\1', text)         # Blockquotes
+    text = re.sub(r'-\s*(.*)', r'\1', text)         # Lists
+    text = re.sub(r'\n\s*\n', '\n', text)           # Remove multiple newlines
+    return text
 
+
+def parse_markdown(markdown_text, heading_pauses, split_at_headings):
     # Remove links
     markdown_text = remove_links(markdown_text)
 
-    # Pause pattern with capturing groups
-    pause_pattern = re.compile(r'(<!--\s*pause:(\d+\.?\d*)(ms|s)\s*-->)')
-
     # Split the markdown text into lines
     lines = markdown_text.split('\n')
-
     segments = []
 
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-
-        # Check for heading
-        heading_match = re.match(r'^(#{1,6})\s*(.*)', line)
-        if heading_match:
-            hashes, heading_text = heading_match.groups()
-            level = min(len(hashes), 3)
-            pause_before = heading_pauses.get(f'h{level}_before', 0)
-            pause_after = heading_pauses.get(f'h{level}_after', 0)
-            is_heading = True
-            heading_level = level
-
-            # Before processing, add pause_before if any
-            if pause_before > 0:
-                segments.append({'text': '', 'pause_after': pause_before, 'is_heading': False})
-
-            # Process the heading text
-            line_segments = process_line_with_pauses(heading_text, pause_pattern, max_length, is_heading, heading_level)
-            segments.extend(line_segments)
-
-            # After processing, add pause_after if any
-            if pause_after > 0:
-                segments.append({'text': '', 'pause_after': pause_after, 'is_heading': False})
-
-        else:
-            # Non-heading line
-            line_segments = process_line_with_pauses(line, pause_pattern, max_length)
-            segments.extend(line_segments)
-
-    return segments
-
-
-def process_line_with_pauses(line, pause_pattern, max_length, is_heading=False, heading_level=None):
-    segments = []
-    pos = 0
-    for match in pause_pattern.finditer(line):
-        start, end = match.span()
-        # Text before the pause tag
-        if start > pos:
-            text = line[pos:start].strip()
-            if text:
-                sentences = split_into_sentences(text)
-                sentences = split_long_sentences(sentences, max_length)
-                for sentence in sentences:
-                    # Ensure ending dot for headings and list items
-                    if is_heading or heading_level is not None:
-                        sentence = ensure_ending_dot(sentence)
-                    segment = {
-                        'text': sentence.strip(),
-                        'pause_before': None,
-                        'pause_after': None,
-                        'is_heading': is_heading,
-                        'heading_level': heading_level
-                    }
-                    segments.append(segment)
-        # Process the pause tag
-        duration = match.group(2)
-        unit = match.group(3)
-        if unit == 'ms':
-            pause_duration = float(duration) / 1000.0
-        else:
-            pause_duration = float(duration)
-        segments.append({'text': '', 'pause_after': pause_duration, 'is_heading': False})
-        pos = end
-
-    # Text after the last pause tag
-    if pos < len(line):
-        text = line[pos:].strip()
+    if not split_at_headings:
+        # Process everything as one chunk
+        text = '\n'.join(lines).strip()
+        # Remove markdown formatting
+        text = remove_markdown_formatting(text)
         if text:
-            sentences = split_into_sentences(text)
-            sentences = split_long_sentences(sentences, max_length)
-            for sentence in sentences:
-                # Ensure ending dot for headings and list items
-                if is_heading or heading_level is not None:
-                    sentence = ensure_ending_dot(sentence)
-                segment = {
-                    'text': sentence.strip(),
-                    'pause_before': None,
-                    'pause_after': None,
-                    'is_heading': is_heading,
-                    'heading_level': heading_level
-                }
-                segments.append(segment)
-    return segments
+            text = ensure_ending_dot(text)
+            segments.append({'text': text, 'is_heading': False})
+        return segments
+
+    else:
+        # Process paragraph by paragraph
+        paragraph = ''
+        for line in lines:
+            line = line.rstrip()
+            if not line:
+                # Empty line indicates end of paragraph
+                if paragraph:
+                    # Process paragraph
+                    segment = process_paragraph(paragraph, heading_pauses)
+                    segments.extend(segment)
+                    paragraph = ''
+            else:
+                paragraph += line + '\n'
+
+        # Process any remaining paragraph
+        if paragraph:
+            segment = process_paragraph(paragraph, heading_pauses)
+            segments.extend(segment)
+
+        return segments
 
 
-def split_into_sentences(text):
-    sentences = sent_tokenize(text)
-    return sentences
-
-
-def split_long_sentences(sentences, max_length):
-    result = []
-    for sentence in sentences:
-        if len(sentence) <= max_length:
-            result.append(sentence)
-        else:
-            # Try splitting at punctuation marks for semantic splitting
-            split_points = [',', ';', ':']
-            chunks = [sentence]
-            for punct in split_points:
-                temp_chunks = []
-                for chunk in chunks:
-                    if len(chunk) > max_length:
-                        sub_chunks = [s.strip() for s in chunk.split(punct)]
-                        temp_chunks.extend(sub_chunks)
-                    else:
-                        temp_chunks.append(chunk)
-                chunks = temp_chunks
-
-            # If still too long, split at word boundaries
-            final_chunks = []
-            for chunk in chunks:
-                if len(chunk) <= max_length:
-                    final_chunks.append(chunk)
-                else:
-                    words = word_tokenize(chunk)
-                    current_chunk = ''
-                    for word in words:
-                        if len(current_chunk) + len(word) + 1 <= max_length:
-                            if current_chunk:
-                                current_chunk += ' ' + word
-                            else:
-                                current_chunk = word
-                        else:
-                            final_chunks.append(current_chunk)
-                            current_chunk = word
-                    if current_chunk:
-                        final_chunks.append(current_chunk)
-            result.extend(final_chunks)
-    return result
+def process_paragraph(paragraph, heading_pauses):
+    paragraph = paragraph.strip()
+    if not paragraph:
+        return []
+    # Check if paragraph is a heading
+    heading_match = re.match(r'^(#{1,6})\s*(.*)', paragraph)
+    if heading_match:
+        hashes, heading_text = heading_match.groups()
+        level = min(len(hashes), 3)
+        pause_before = heading_pauses.get(f'h{level}_before', 0)
+        pause_after = heading_pauses.get(f'h{level}_after', 0)
+        is_heading = True
+        heading_level = level
+        # Remove markdown formatting
+        heading_text = remove_markdown_formatting(heading_text)
+        # Ensure ending dot
+        heading_text = ensure_ending_dot(heading_text)
+        segment = {
+            'text': heading_text,
+            'pause_before': pause_before,
+            'pause_after': pause_after,
+            'is_heading': True,
+            'heading_level': heading_level
+        }
+        return [segment]
+    else:
+        # Regular paragraph
+        # Remove markdown formatting
+        paragraph_text = remove_markdown_formatting(paragraph)
+        paragraph_text = ensure_ending_dot(paragraph_text)
+        segment = {
+            'text': paragraph_text,
+            'pause_before': None,
+            'pause_after': None,
+            'is_heading': False
+        }
+        return [segment]
 
 
 def similarity_ratio(a, b):
     matcher = SequenceMatcher(None, a, b)
     return matcher.ratio()
 
-
-def calculate_wps(text, duration_seconds):
-    word_count = len(text.strip().split())
-    if duration_seconds > 0:
-        return word_count / duration_seconds
-    else:
-        return 0
-
-
-def generate_best_audio(text, args, stt_model, target_wps=None):
+def generate_best_audio(text, args, stt_model, tts_model, ref_s=None):
     print(f"{Fore.YELLOW}{Style.BRIGHT}Processing text:{Style.RESET_ALL} {text}")
 
-    max_duration_seconds = 30.0  # Maximum allowed duration in seconds
-
-    best_similarity = 0.0
-    best_audio_path = None
-    best_wps_difference = float('inf')
-    duration_seconds = None  # Initialize to None
-    retries = 0
     max_retries = 5  # Limit attempts to prevent infinite loops
-
-    temp_files = []  # Track temporary files to delete later
+    retries = 0
+    best_similarity = 0.0
+    best_audio = None
 
     while retries < max_retries:
-        # Create a unique temporary file for each attempt
+        # Adjust diffusion_steps on each retry to improve similarity
+        diffusion_steps = args.diffusion_steps + retries  # Increase diffusion_steps on each retry
+
+        # Create output WAV file path
         temp_fd, temp_path = tempfile.mkstemp(suffix='.wav')
         os.close(temp_fd)
-        temp_files.append(temp_path)
-
-        generate_args = {
-            'generation_text': text,
-            'model_name': args.model_name,
-            'output_path': temp_path,
-            'seed': args.seed,
-            # Do not set 'duration' on first attempt
-        }
-        if duration_seconds is not None:
-            generate_args['duration'] = duration_seconds
-
-        if args.ref_audio and args.ref_text:
-            generate_args['ref_audio_path'] = args.ref_audio
-            generate_args['ref_audio_text'] = args.ref_text
-        elif args.ref_audio or args.ref_text:
-            raise ValueError("Both reference audio and reference text must be provided together.")
 
         # Generate audio
-        generate(**generate_args)
+        try:
+            audio = tts_model.inference(
+                text=text,
+                ref_s=ref_s,
+                output_sample_rate=24000,
+                alpha=args.alpha,
+                beta=args.beta,
+                diffusion_steps=diffusion_steps,
+                embedding_scale=args.embedding_scale,
+                output_wav_file=temp_path
+            )
+        except Exception as e:
+            print(f"Error during inference: {e}")
+            os.remove(temp_path)
+            break
 
         # Read generated audio to get its duration
         audio_data, _ = sf.read(temp_path)
-        generated_duration_seconds = len(audio_data) / 24000  # SAMPLE_RATE is 24000 Hz
 
         # Transcribe the audio
         segments = stt_model.transcribe(temp_path)
@@ -244,102 +167,57 @@ def generate_best_audio(text, args, stt_model, target_wps=None):
         print(f"{Fore.YELLOW}{Style.BRIGHT}Transcribed text:{Style.RESET_ALL} {transcribed_text}")
 
         # Clean up transcribed text and original text for comparison
-        clean_transcribed_text = re.sub(r'\s+', ' ', transcribed_text.lower())
-        clean_original_text = re.sub(r'\s+', ' ', text.lower())
+        clean_transcribed_text = re.sub(r'[\s.,\'"\"-]+', ' ', transcribed_text.lower()).strip()
+        clean_original_text = re.sub(r'[\s.,\'"\"-]+', ' ', text.lower()).strip()
 
         # Compute similarity of the whole text
         similarity = similarity_ratio(clean_transcribed_text, clean_original_text)
         print(f"Attempt {retries + 1}: Similarity: {similarity:.2f}")
 
-        # Calculate WPS
-        wps = calculate_wps(transcribed_text, generated_duration_seconds)
-        print(f"Attempt {retries + 1}: WPS: {wps:.2f}")
-
-        # If target WPS is not set, set it from the first successful attempt
-        if target_wps is None and similarity >= args.min_similarity:
-            target_wps = wps
-            print(f"Estimated target WPS: {target_wps:.2f}")
-
-        # Compute WPS difference
-        if target_wps is not None:
-            wps_difference = abs(wps - target_wps) / target_wps
-        else:
-            wps_difference = 0
-
-        # Check if similarity and WPS are acceptable
-        if similarity >= args.min_similarity and wps_difference <= args.wps_threshold:
+        # Check if this attempt's similarity is the best so far
+        if similarity > best_similarity:
             best_similarity = similarity
-            best_audio_path = temp_path
-            print("Audio accepted with acceptable similarity and WPS.")
+            best_audio = audio_data  # Update best audio with highest similarity found so far
+            print("New best audio found with updated similarity.")
+
+        # Stop searching if similarity meets or exceeds the minimum threshold
+        if similarity >= args.min_similarity:
+            print("Audio accepted with acceptable similarity.")
+            os.remove(temp_path)
             break
-
-        # If this attempt is better, save it
-        if (similarity > best_similarity) or (similarity == best_similarity and wps_difference < best_wps_difference):
-            best_similarity = similarity
-            best_wps_difference = wps_difference
-            best_audio_path = temp_path
         else:
-            # If no improvement, stop trying
-            print("No improvement; stopping.")
-            break
+            print("Similarity below threshold, retrying with increased diffusion_steps.")
+            retries += 1
+            os.remove(temp_path)
 
-        # Adjust duration to get closer to target WPS
-        if target_wps is not None:
-            # Calculate desired duration to achieve target WPS
-            word_count = len(text.strip().split())
-            desired_duration = word_count / target_wps
-            # Adjust duration_seconds towards desired duration
-            if duration_seconds is None:
-                duration_seconds = desired_duration
-            else:
-                # Average the current duration and desired duration
-                duration_seconds = (duration_seconds + desired_duration) / 2
-            # Ensure duration is within limits
-            duration_seconds = min(duration_seconds, max_duration_seconds)
-            if duration_seconds >= max_duration_seconds:
-                print("Reached maximum duration limit.")
-                break
-            print(f"Adjusting duration to {duration_seconds:.2f} seconds and retrying...")
-        else:
-            # Increase duration by 20% for next attempt
-            if duration_seconds is None:
-                duration_seconds = min(generated_duration_seconds * 1.2, max_duration_seconds)
-            else:
-                duration_seconds = min(duration_seconds * 1.2, max_duration_seconds)
-            if duration_seconds >= max_duration_seconds:
-                print("Reached maximum duration limit.")
-                break
-            print(f"Increasing duration to {duration_seconds:.2f} seconds and retrying...")
-
-        retries += 1
-
-    # Load the best audio from the best attempt
-    if best_audio_path is not None:
-        audio, _ = sf.read(best_audio_path)
-    else:
-        # If no good audio was generated, use the last attempt
+    if best_audio is None:
         print(f"Warning: Could not generate acceptable audio for text: {text}")
-        audio, _ = sf.read(temp_path)
+        best_audio = np.zeros(int(0.5 * 24000))  # Insert silence as a placeholder
 
-    # Clean up temporary files except the best one
-    for file_path in temp_files:
-        if os.path.exists(file_path) and file_path != best_audio_path:
-            os.remove(file_path)
+    return best_audio
 
-    return audio, target_wps
 
 
 def text_to_audio(segments, args):
     # Initialize the speech-to-text model
     stt_model = Model('base.en', n_threads=4)  # Adjust n_threads as needed
 
+    # Initialize the TTS model
+    tts_model = tts.StyleTTS2()
+
+    # Precompute the target voice vector if a target voice is specified
+    ref_s = None
+    if args.ref_audio:
+        if os.path.exists(args.ref_audio):
+            print("Computing style vector from reference audio...")
+            ref_s = tts_model.compute_style(args.ref_audio)
+        else:
+            print(f"Reference audio file not found: {args.ref_audio}")
+
     total_chunks = len(segments)
     start_time = time.time()
 
-    sample_rate = 24000  # SAMPLE_RATE is 24000 Hz
-
-    # Initialize target WPS
-    target_wps = args.target_wps
+    sample_rate = 24000
 
     # Open the output audio file in write mode
     with sf.SoundFile(args.output, mode='w', samplerate=sample_rate, channels=1, subtype='PCM_16') as out_file:
@@ -365,7 +243,7 @@ def text_to_audio(segments, args):
                     out_file.write(np.zeros(pause_samples))
 
                 if text:
-                    audio, target_wps = generate_best_audio(text, args, stt_model, target_wps)
+                    audio = generate_best_audio(text, args, stt_model, tts_model, ref_s=ref_s)
                     out_file.write(audio)
                 else:
                     # If text is empty, it's a pause segment
@@ -408,8 +286,8 @@ def convert_markdown_to_speech(markdown_text, output_file, **kwargs):
         'h3_after': getattr(args, 'pause_h3_after', 0.7),
     }
 
-    # Parse the markdown with pauses
-    segments = parse_markdown_with_pauses(markdown_text, heading_pauses, args.max_length)
+    # Parse the markdown
+    segments = parse_markdown(markdown_text, heading_pauses, args.split_at_headings)
 
     # Generate audio and write incrementally
     text_to_audio(segments, args)
