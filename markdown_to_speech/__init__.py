@@ -36,7 +36,7 @@ def remove_markdown_formatting(text):
     text = re.sub(r'>\s*(.*)', r'\1', text)         # Blockquotes
     text = re.sub(r'-\s*(.*)', r'\1', text)         # Lists
     text = re.sub(r'\n\s*\n', '\n', text)           # Remove multiple newlines
-    text = re.sub(r'”', '"', text)   # Replace smart quotes
+    text = re.sub(r'[\u201c\u201d\u201e\u201f\u2033\u2036]', '"', text)   # Replace smart quotes
     return text
 
 
