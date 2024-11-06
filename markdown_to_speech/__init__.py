@@ -45,17 +45,62 @@ def parse_markdown(markdown_text, heading_pauses, split_at_headings):
 
     # Split the markdown text into lines
     lines = markdown_text.split('\n')
+    processed_lines = []
+    in_list_item = False
+    list_item_indent = 0
+    current_paragraph = []
+
+    def process_paragraph():
+        if current_paragraph:
+            current_paragraph[-1] = ensure_ending_dot(current_paragraph[-1])
+            processed_lines.extend(current_paragraph)
+            current_paragraph.clear()
+
+    for i, line in enumerate(lines):
+        stripped_line = line.strip()
+
+        # Check if the line is a heading
+        if stripped_line.startswith('#'):
+            process_paragraph()
+            processed_lines.append(ensure_ending_dot(stripped_line))
+            in_list_item = False
+        # Check if the line is the start of a list item
+        elif re.match(r'^\s*[-*+]\s', line) or re.match(r'^\s*\d+\.\s', line):
+            process_paragraph()
+            current_paragraph.append(stripped_line)
+            in_list_item = True
+            list_item_indent = len(line) - len(line.lstrip())
+        elif in_list_item and len(line) - len(line.lstrip()) > list_item_indent:
+            # This is a continuation of a list item
+            current_paragraph.append(stripped_line)
+        elif stripped_line:
+            # It's a non-empty line (start of a new paragraph or continuation)
+            if not current_paragraph:
+                # Start of a new paragraph
+                current_paragraph.append(stripped_line)
+            else:
+                # Continuation of the current paragraph
+                current_paragraph[-1] += ' ' + stripped_line
+            in_list_item = False
+        else:
+            # Empty line, end of paragraph
+            process_paragraph()
+            in_list_item = False
+
+    # Process any remaining paragraph
+    process_paragraph()
+
+    processed_text = '\n'.join(processed_lines)
+
     segments = []
 
     if not split_at_headings:
-        # Process everything as one chunk
-        text = '\n'.join(lines).strip()
         # Remove markdown formatting
-        text = remove_markdown_formatting(text)
+        text = remove_markdown_formatting(processed_text)
         if text:
-            text = ensure_ending_dot(text)
-            segments.append({'text': text, 'is_heading': False})
+            segments.append({'text': text.strip(), 'is_heading': False})
         return segments
+
 
     else:
         # Process paragraph by paragraph
