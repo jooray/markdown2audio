@@ -126,7 +126,7 @@ def similarity_ratio(a, b):
 def generate_best_audio(text, args, stt_model, tts_model, ref_s=None):
     print(f"{Fore.YELLOW}{Style.BRIGHT}Processing text:{Style.RESET_ALL} {text}")
 
-    max_retries = 5  # Limit attempts to prevent infinite loops
+    max_retries = 5 if args.max_retries is None else args.max_retries
     retries = 0
     best_similarity = 0.0
     best_audio = None
@@ -203,7 +203,7 @@ def text_to_audio(segments, args):
     stt_model = Model('base.en', n_threads=4)  # Adjust n_threads as needed
 
     # Initialize the TTS model
-    tts_model = tts.StyleTTS2()
+    tts_model = tts.StyleTTS2(phoneme_converter='espeak')
 
     # Precompute the target voice vector if a target voice is specified
     ref_s = None

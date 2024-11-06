@@ -14,8 +14,8 @@ def main():
     parser.add_argument("--diffusion-steps", type=int, default=5, help="Diffusion steps for StyleTTS2 (default: 5).")
     parser.add_argument("--embedding-scale", type=float, default=1.0, help="Embedding scale for StyleTTS2 (default: 1.0).")
 
-    # Similarity threshold
     parser.add_argument("--min-similarity", type=float, default=0.9, help="Minimum acceptable similarity (default: 0.9).")
+    parser.add_argument("--max-retries", type=int, default=2, help="Maximum retries if similarity is too low (default: 2).")
 
     parser.add_argument('--pause-h1-before', type=float, default=2.0,
                         help='Pause before H1 headings in seconds.')
