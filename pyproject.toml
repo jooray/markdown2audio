@@ -16,7 +16,7 @@ nltk = "^3.9.1"
 pywhispercpp = "^1.2.0"
 tqdm = "^4.64.1"
 colorama = "^0.4.6"
-styletts2 = { git = "https://github.com/jooray/StyleTTS2", branch = "master" }
+styletts2 = { git = "https://github.com/jooray/StyleTTS2", branch = "main" }
 
 [build-system]
 requires = ["poetry-core"]
