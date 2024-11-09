@@ -102,7 +102,11 @@ python -m markdown_to_speech.cli input.md output.wav --split-at-headings
 python -m markdown_to_speech.cli input.md output.wav --ref-audio path/to/ref_audio.wav
 ```
 
-Ensure that the reference audio file exists and is in a compatible format.
+Ensure that the reference audio file exists and is in a compatible format. You can convert to the right format like this:
+
+```bash
+ffmpeg -i /path/to/audio.wav -ac 1 -ar 24000 -sample_fmt s16 -t 10 /path/to/output_audio.wav
+```
 
 #### Adjusting StyleTTS2 Parameters
 
