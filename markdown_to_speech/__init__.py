@@ -1,6 +1,8 @@
 import re
 import numpy as np
 import soundfile as sf
+import torch
+torch.serialization.add_safe_globals([getattr])
 from pywhispercpp.model import Model
 from difflib import SequenceMatcher
 import os
