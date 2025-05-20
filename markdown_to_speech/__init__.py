@@ -2,7 +2,7 @@ import re
 import numpy as np
 import soundfile as sf
 import torch
-torch.serialization.add_safe_globals([getattr])
+torch.serialization.add_safe_globals([getattr, torch.optim.lr_scheduler.OneCycleLR])
 from pywhispercpp.model import Model
 from difflib import SequenceMatcher
 import os
