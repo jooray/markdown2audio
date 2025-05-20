@@ -2,7 +2,6 @@ import re
 import numpy as np
 import soundfile as sf
 import torch
-torch.serialization.add_safe_globals([getattr, torch.optim.lr_scheduler.OneCycleLR])
 from pywhispercpp.model import Model
 from difflib import SequenceMatcher
 import os
@@ -10,7 +9,7 @@ import tempfile
 import time
 from tqdm import tqdm
 from colorama import init, Fore, Style
-from styletts2 import tts  # Import the StyleTTS2 model
+from styletts2 import tts
 
 # Initialize colorama
 init(autoreset=True)
